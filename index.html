@@ -1,0 +1,112 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Amplifier V1 Panel</title>
+    <style>
+        body { background: #0a0a0a; color: #00ff66; font-family: sans-serif; text-align: center; padding: 15px 5px; margin: 0; }
+        h2 { color: #00ff66; font-size: 28px; text-transform: uppercase; margin-bottom: 5px; text-shadow: 0 0 10px #00ff66; }
+        .card { background: #121212; border: 1px solid #00ff66; border-radius: 8px; padding: 15px; width: 90%; max-width: 420px; margin: 10px auto; box-sizing: border-box; text-align: left; }
+        textarea, select, input, button { padding: 12px; margin: 8px auto; font-size: 15px; border-radius: 6px; width: 100%; background: #121212; color: #00ff66; border: 1px solid #00ff66; box-sizing: border-box; display: block; }
+        textarea { height: 90px; resize: none; font-family: monospace; font-size: 12px; }
+        button { background: #00ff66; color: #000; border: none; cursor: pointer; font-weight: bold; }
+        .slider-container { width: 100%; margin: 15px 0; background: #111; padding: 12px; border-radius: 8px; border: 1px solid #00ff66; box-sizing: border-box; }
+        .slider-container label { font-size: 13px; color: #00ff66; display: block; font-weight: bold; margin-top: 5px; }
+        .slider-container input[type=range] { width: 100%; accent-color: #00ff66; }
+        #panelSection { display: none; }
+    </style>
+</head>
+<body>
+    <h2>AMPLIFIER V1</h2>
+    <div class="card" id="tokenSection">
+        <h4 style="margin:0 0 8px 0; color:#00ff66;">Step 1: Add Discord Tokens</h4>
+        <textarea id="tokenInput" placeholder="Paste Discord tokens here..."></textarea>
+        <button onclick="loginTokens()">LOGIN & OPEN PANEL</button>
+    </div>
+    <div id="panelSection">
+        <div class="card">
+            <h4 style="margin:0 0 5px 0; color:#00ff66;">Active Accounts:</h4>
+            <div id="accountList" style="font-size: 13px;">No accounts active.</div>
+            <button onclick="showTokenGateway()" style="background:transparent; color:#ff0055; border:1px solid #ff0055; font-size:12px; padding:6px; margin-top:8px;">+ Add Tokens</button>
+        </div>
+        <div class="card">
+            <select id="accountSelect"><option value="all">-- All Loaded Accounts --</option></select>
+            <select id="guildSelect" onchange="loadChannels()"><option value="">-- Select Server --</option></select>
+            <select id="channelSelect"><option value="">-- Select Voice Channel --</option></select>
+            <div class="slider-container">
+                <label>Gain: <span id="gainVal">60</span> dB</label>
+                <input type="range" id="gain" min="0" max="100" value="60" oninput="gainVal.innerText = this.value">
+                <label>Bass: <span id="bassVal">100</span> dB</label>
+                <input type="range" id="bass" min="0" max="120" value="100" oninput="bassVal.innerText = this.value">
+                <label>Air: <span id="airVal">80</span> dB</label>
+                <input type="range" id="air" min="0" max="100" value="80" oninput="airVal.innerText = this.value">
+            </div>
+            <input type="file" id="audioFile" accept="audio/*">
+            <input type="text" id="audioUrl" placeholder="Or Audio URL">
+            <button onclick="playAudio()" style="background: #00ff66; color: #000;">PLAY AUDIO</button>
+            <button onclick="sendAction('disconnect')" style="background: #ff0000; color: #fff; margin-top:10px;">DISCONNECT</button>
+        </div>
+    </div>
+    <script>
+        async function loginTokens() {
+            const tokens = tokenInput.value.trim();
+            if (!tokens) return alert("Enter tokens!");
+            const res = await fetch('/api/login-tokens', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ tokens })
+            }).then(r => r.json());
+            alert(res.message);
+            tokenSection.style.display = 'none';
+            panelSection.style.display = 'block';
+            loadPanelData();
+        }
+        function showTokenGateway() {
+            panelSection.style.display = 'none';
+            tokenSection.style.display = 'block';
+        }
+        async function loadPanelData() {
+            fetch('/api/guilds').then(r=>r.json()).then(gList => {
+                guildSelect.innerHTML = '<option value="">-- Select Server --</option>';
+                gList.forEach(g => guildSelect.innerHTML += `<option value="${g.id}">${g.name}</option>`);
+            });
+            fetch('/api/accounts').then(r=>r.json()).then(accs => {
+                let html = '', optHtml = '<option value="all">-- All Loaded Accounts --</option>';
+                for (let id in accs) {
+                    html += `<div>Acc ${id}: <b>${accs[id]}</b></div>`;
+                    optHtml += `<option value="${id}">Account ${id} (${accs[id]})</option>`;
+                }
+                accountList.innerHTML = html || 'No accounts.';
+                accountSelect.innerHTML = optHtml;
+            });
+        }
+        function loadChannels() {
+            if (!guildSelect.value) return;
+            fetch('/api/channels/' + guildSelect.value).then(r=>r.json()).then(cList => {
+                channelSelect.innerHTML = '<option value="">-- Select Channel --</option>';
+                cList.forEach(c => channelSelect.innerHTML += `<option value="${c.id}">${c.name}</option>`);
+            });
+        }
+        async function playAudio() {
+            if (!guildSelect.value || !channelSelect.value) return alert("Select server & channel!");
+            const fd = new FormData();
+            fd.append('guildId', guildSelect.value);
+            fd.append('channelId', channelSelect.value);
+            fd.append('accountCount', accountSelect.value);
+            fd.append('loop', true);
+            fd.append('gain', gain.value);
+            fd.append('bass', bass.value);
+            fd.append('air', air.value);
+            if (audioFile.files.length > 0) fd.append('audioFile', audioFile.files[0]);
+            else fd.append('audioUrl', audioUrl.value);
+            const res = await fetch('/api/play', { method: 'POST', body: fd }).then(r => r.json());
+            alert(res.message);
+        }
+        async function sendAction(action) {
+            const res = await fetch('/api/' + action, { method: 'POST' }).then(r => r.json());
+            alert(res.message);
+        }
+    </script>
+</body>
+  </html>
+  
